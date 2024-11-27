@@ -2,7 +2,7 @@ import os
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
 from datetime import datetime
-from pyairtable import Table
+from pyairtable import Api
 import time
 
 def get_spotify_client():
@@ -31,22 +31,38 @@ def get_all_artist_tracks(sp, artist_id):
     # Get tracks from each album
     for album in albums:
         print(f"Processing album: {album['name']}")
-        results = sp.album_tracks(album['id'])
-        for track in results['tracks']['items']:
-            # Check if artist is in the track
-            if any(artist['id'] == artist_id for artist in track['artists']):
-                track_info = sp.track(track['id'])
-                track_data = {
-                    'id': track_info['id'],
-                    'name': track_info['name'],
-                    'album': album['name'],
-                    'release_date': album['release_date'],
-                    'popularity': track_info['popularity'],
-                    'duration_ms': track_info['duration_ms'],
-                    'uri': track_info['uri']
-                }
-                all_tracks.append(track_data)
-                print(f"Added track: {track_data['name']} (Popularity: {track_data['popularity']})")
+        try:
+            results = sp.album_tracks(album['id'])
+            tracks = results['items']  # Get initial tracks
+            
+            # Get remaining tracks if album has more
+            while results['next']:
+                results = sp.next(results)
+                tracks.extend(results['items'])
+            
+            # Process each track
+            for track in tracks:
+                # Check if artist is in the track
+                if any(artist['id'] == artist_id for artist in track['artists']):
+                    try:
+                        track_info = sp.track(track['id'])
+                        track_data = {
+                            'id': track_info['id'],
+                            'name': track_info['name'],
+                            'album': album['name'],
+                            'release_date': album['release_date'],
+                            'popularity': track_info['popularity'],
+                            'duration_ms': track_info['duration_ms'],
+                            'uri': track_info['uri']
+                        }
+                        all_tracks.append(track_data)
+                        print(f"Added track: {track_data['name']} (Popularity: {track_data['popularity']})")
+                    except Exception as e:
+                        print(f"Error processing track {track['id']}: {str(e)}")
+                        continue
+        except Exception as e:
+            print(f"Error processing album {album['name']}: {str(e)}")
+            continue
     
     return all_tracks
 
@@ -70,11 +86,8 @@ def main():
     sp = get_spotify_client()
     
     print("Initializing Airtable client...")
-    table = Table(
-        os.environ['AIRTABLE_ACCESS_TOKEN'],
-        os.environ['AIRTABLE_BASE_ID'],
-        os.environ['AIRTABLE_TABLE_NAME']
-    )
+    api = Api(os.environ['AIRTABLE_ACCESS_TOKEN'])
+    table = api.table(os.environ['AIRTABLE_BASE_ID'], os.environ['AIRTABLE_TABLE_NAME'])
     
     # Get all tracks
     artist_id = os.environ['SPOTIFY_ARTIST_ID']  # TÂCHES Spotify ID
