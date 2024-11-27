@@ -42,8 +42,8 @@ def get_all_artist_tracks(sp, artist_id):
             
             # Process each track
             for track in tracks:
-                # Check if artist is in the track
-                if any(artist['id'] == artist_id for artist in track['artists']):
+                # Only include tracks where our artist is the primary artist (first artist)
+                if track['artists'] and track['artists'][0]['id'] == artist_id:
                     try:
                         track_info = sp.track(track['id'])
                         track_data = {
