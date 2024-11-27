@@ -4,19 +4,28 @@ on:
   schedule:
     - cron: '0 0 * * *'  # Run daily at midnight UTC
   workflow_dispatch:  # Allow manual triggers
+  push:
+    paths:
+      - 'track_popularity.py'
+      - 'requirements.txt'
 
 jobs:
   track:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.9'
+          cache: 'pip'
           
       - name: Install dependencies
-        run: pip install -r requirements.txt
-        
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          
       - name: Run tracking script
         env:
           SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
@@ -25,4 +34,32 @@ jobs:
           AIRTABLE_BASE_ID: ${{ secrets.AIRTABLE_BASE_ID }}
           AIRTABLE_TABLE_NAME: ${{ secrets.AIRTABLE_TABLE_NAME }}
           SPOTIFY_ARTIST_ID: '4kLvhMAuCloLxoP1aVM7Lr'
-        run: python track_popularity.py
+        run: |
+          echo "Starting popularity tracking..."
+          python -u track_popularity.py  # -u for unbuffered output
+          echo "Tracking complete!"
+          
+      - name: Check for tracking success
+        if: always()
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "✅ Tracking completed successfully!"
+          else
+            echo "❌ Tracking failed!"
+            exit 1
+          fi
+          
+      - name: Create Issue on Failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: '❌ Spotify Tracking Failed',
+              body: `The popularity tracking workflow failed on ${new Date().toISOString()}.
+              
+              [View the workflow run](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`
+            });
+            console.log('Created issue #' + issue.data.number);
