@@ -35,31 +35,6 @@ jobs:
           AIRTABLE_TABLE_NAME: ${{ secrets.AIRTABLE_TABLE_NAME }}
           SPOTIFY_ARTIST_ID: '4kLvhMAuCloLxoP1aVM7Lr'
         run: |
-          echo "Starting popularity tracking..."
-          python -u track_popularity.py  # -u for unbuffered output
-          echo "Tracking complete!"
-          
-      - name: Check for tracking success
-        if: always()
-        run: |
-          if [ "${{ job.status }}" = "success" ]; then
-            echo "✅ Tracking completed successfully!"
-          else
-            echo "❌ Tracking failed!"
-            exit 1
-          fi
-          
-      - name: Create Issue on Failure
-        if: failure()
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const issue = await github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: '❌ Spotify Tracking Failed',
-              body: `The popularity tracking workflow failed on ${new Date().toISOString()}.
-              
-              [View the workflow run](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`
-            });
-            console.log('Created issue #' + issue.data.number);
+          echo "🎵 Starting popularity tracking..."
+          python -u track_popularity.py
+          echo "✅ Tracking complete!"
