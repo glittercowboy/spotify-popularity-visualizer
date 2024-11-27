@@ -42,8 +42,12 @@ def get_all_artist_tracks(sp, artist_id):
             
             # Process each track
             for track in tracks:
-                # Only include tracks where our artist is the primary artist (first artist)
-                if track['artists'] and track['artists'][0]['id'] == artist_id:
+                # Include tracks where artist is primary, featured, or remixer
+                is_primary = track['artists'][0]['id'] == artist_id
+                is_featured = any(artist['id'] == artist_id for artist in track['artists'])
+                is_remix = 'TÂCHES' in track['name'] or 'Taches' in track['name'] or 'taches' in track['name']
+                
+                if is_primary or (is_featured and not album['name'].startswith('Zootopia')) or is_remix:
                     try:
                         track_info = sp.track(track['id'])
                         track_data = {
