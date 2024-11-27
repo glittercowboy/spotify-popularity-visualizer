@@ -15,25 +15,26 @@ def get_spotify_client():
 
 def get_all_artist_tracks(sp, artist_id):
     """Get all tracks by the artist, including features and remixes"""
-    all_tracks = []
-    print(f"Fetching tracks for artist ID: {artist_id}")
+    all_tracks = {}  # Using dict to avoid duplicates
+    print(f"🔍 Fetching albums for artist ID: {artist_id}")
     
     # Get artist's albums
     albums = []
-    results = sp.artist_albums(artist_id, album_type='album,single,appears_on')
+    results = sp.artist_albums(artist_id, album_type='album,single,appears_on', limit=50)
     albums.extend(results['items'])
     while results['next']:
         results = sp.next(results)
         albums.extend(results['items'])
     
-    print(f"Found {len(albums)} albums/singles")
-
+    print(f"📀 Found {len(albums)} albums/singles to process")
+    
     # Get tracks from each album
-    for album in albums:
-        print(f"Processing album: {album['name']}")
+    total_albums = len(albums)
+    for idx, album in enumerate(albums, 1):
+        print(f"[{idx}/{total_albums}] Processing: {album['name']}")
         try:
-            results = sp.album_tracks(album['id'])
-            tracks = results['items']  # Get initial tracks
+            results = sp.album_tracks(album['id'], limit=50)
+            tracks = results['items']
             
             # Get remaining tracks if album has more
             while results['next']:
@@ -42,6 +43,10 @@ def get_all_artist_tracks(sp, artist_id):
             
             # Process each track
             for track in tracks:
+                # Skip if we already have this track
+                if track['id'] in all_tracks:
+                    continue
+                    
                 # Include tracks where artist is primary, featured, or remixer
                 is_primary = track['artists'][0]['id'] == artist_id
                 is_featured = any(artist['id'] == artist_id for artist in track['artists'])
@@ -59,16 +64,16 @@ def get_all_artist_tracks(sp, artist_id):
                             'duration_ms': track_info['duration_ms'],
                             'uri': track_info['uri']
                         }
-                        all_tracks.append(track_data)
-                        print(f"Added track: {track_data['name']} (Popularity: {track_data['popularity']})")
+                        all_tracks[track['id']] = track_data
+                        print(f"  ✅ Added: {track_data['name']} (Popularity: {track_data['popularity']})")
                     except Exception as e:
-                        print(f"Error processing track {track['id']}: {str(e)}")
+                        print(f"  ❌ Error processing track {track['id']}: {str(e)}")
                         continue
         except Exception as e:
-            print(f"Error processing album {album['name']}: {str(e)}")
+            print(f"  ❌ Error processing album {album['name']}: {str(e)}")
             continue
     
-    return all_tracks
+    return list(all_tracks.values())
 
 def get_last_popularity(table, track_uri):
     """Get the last recorded popularity for a track"""
@@ -83,41 +88,39 @@ def format_duration(ms):
     return f"{minutes}:{remaining_seconds:02d}"
 
 def main():
-    print("Starting Spotify popularity tracking...")
+    start_time = time.time()
+    print("🎵 Starting Spotify popularity tracking...")
     
     # Initialize clients
-    print("Initializing Spotify client...")
+    print("🔑 Initializing Spotify client...")
     sp = get_spotify_client()
     
-    print("Initializing Airtable client...")
+    print("🔑 Initializing Airtable client...")
     api = Api(os.environ['AIRTABLE_ACCESS_TOKEN'])
     table = api.table(os.environ['AIRTABLE_BASE_ID'], os.environ['AIRTABLE_TABLE_NAME'])
     
     # Get all tracks
     artist_id = os.environ['SPOTIFY_ARTIST_ID']  # TÂCHES Spotify ID
-    print(f"\nFetching tracks for artist ID: {artist_id}")
     tracks = get_all_artist_tracks(sp, artist_id)
     
     # Current date for logging
     current_date = datetime.now().strftime('%Y-%m-%d')
-    print(f"\nProcessing tracks for date: {current_date}")
+    print(f"\n📊 Processing {len(tracks)} tracks for date: {current_date}")
     
     # Process each track
     logged_tracks = []
     changes = 0
     
     for track in tracks:
-        print(f"\nChecking track: {track['name']}")
         # Get last recorded popularity
         last_popularity = get_last_popularity(table, track['uri'])
         
         # Only log if popularity has changed or no previous record exists
         if last_popularity is None:
-            print(f"No previous record found for {track['name']}")
+            print(f"📝 First record for: {track['name']}")
         elif last_popularity != track['popularity']:
-            print(f"Popularity changed from {last_popularity} to {track['popularity']}")
+            print(f"📈 Popularity changed for {track['name']}: {last_popularity} → {track['popularity']}")
         else:
-            print(f"No popularity change for {track['name']}")
             continue
             
         # Create record
@@ -136,18 +139,20 @@ def main():
             table.create(record)
             logged_tracks.append(track)
             changes += 1
-            print(f"✅ Successfully logged {track['name']} - SPI: {track['popularity']}")
+            print(f"✅ Logged: {track['name']}")
             time.sleep(0.2)  # Rate limiting
         except Exception as e:
             print(f"❌ Error logging {track['name']}: {str(e)}")
     
     # Display results
-    print(f"\n📊 Summary:")
-    print(f"Tracked {len(tracks)} songs, logged {changes} popularity changes:")
+    end_time = time.time()
+    duration = round(end_time - start_time, 2)
+    print(f"\n📊 Summary (completed in {duration}s):")
+    print(f"Processed {len(tracks)} tracks, logged {changes} popularity changes:")
     if changes > 0:
         print("\nTracks with popularity changes:")
         for track in logged_tracks:
-            print(f"• {track['name']} ({track['album']}) - {track['popularity']}/100 - {format_duration(track['duration_ms'])} - Released: {track['release_date']}")
+            print(f"• {track['name']} ({track['album']}) - {track['popularity']}/100")
     else:
         print("No popularity changes detected today.")
 
